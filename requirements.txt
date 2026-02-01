@@ -1,2 +1,5 @@
 streamlit
-pandas
+ pandas
+ matplotlib.pyplot 
+ kagglehub
+ pathlib 
