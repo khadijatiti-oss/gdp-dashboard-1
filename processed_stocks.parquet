@@ -1,0 +1,35 @@
+import pandas as pd
+from pathlib import Path
+import kagglehub
+
+def create_mini_dataset():
+    print("Downloading raw data...")
+    dataset_path = kagglehub.dataset_download("jacksoncrow/stock-market-dataset")
+    
+    # Path to the specific 'stocks' folder inside the dataset
+    stocks_dir = Path(dataset_path) / "stocks"
+    csv_files = list(stocks_dir.glob("*.csv"))
+    
+    all_data = []
+    
+    # Let's pick the top 100 most common stocks or just a subset
+    # To keep it fast, we'll limit it to 100 files
+    for file in csv_files[:100]: 
+        try:
+            # We ONLY load Date and Close to save 80% of space
+            df = pd.read_csv(file, usecols=["Date", "Close"])
+            df["Date"] = pd.to_datetime(df["Date"])
+            df["Ticker"] = file.stem
+            all_data.append(df)
+            print(f"Processed {file.stem}")
+        except:
+            continue
+
+    final_df = pd.concat(all_data, ignore_index=True)
+    
+    # Save as Parquet (Compressed & Fast)
+    final_df.to_parquet("processed_stocks.parquet", index=False)
+    print("Done! 'processed_stocks.parquet' is ready.")
+
+if __name__ == "__main__":
+    create_mini_dataset()
