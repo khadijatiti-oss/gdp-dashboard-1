@@ -13,8 +13,11 @@ st.set_page_config(
 # Load the pre-processed data
 @st.cache_data
 def load_data():
+    import os
+st.write(f"File exists: {os.path.exists('processed_stocks.parquet')}")
+st.write(f"File size: {os.path.getsize('processed_stocks.parquet')} bytes")
     # This reads the small, fast file you uploaded to GitHub
-    df = pd.read_parquet("processed_stocks.parquet")
+ df = pd.read_parquet("processed_stocks.parquet", engine="pyarrow")
     # Ensure Date is datetime format
     df["Date"] = pd.to_datetime(df["Date"])
     return df
