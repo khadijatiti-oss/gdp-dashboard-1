@@ -1,19 +1,20 @@
-# :earth_americas: GDP dashboard template
+# 📈 Stock Market Dashboard
 
-A simple Streamlit app showing the GDP of different countries in the world.
+A simple Streamlit app that lets you explore stock prices over time.
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://gdp-dashboard-template.streamlit.app/)
+Features:
+- Filter by stock ticker
+- Filter by date range
+- View closing price trends
+- See metrics like latest price and change since start
 
-### How to run it on your own machine
+### How to run it
 
-1. Install the requirements
+1. Install required packages:
 
-   ```
-   $ pip install -r requirements.txt
-   ```
 
-2. Run the app
+2. Run the app:
 
-   ```
-   $ streamlit run streamlit_app.py
-   ```
+
+3. The dashboard will open in your browser for interactive exploration.
+
