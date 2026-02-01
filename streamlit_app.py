@@ -1,58 +1,83 @@
 import streamlit as st
 import pandas as pd
-from pathlib import Path
-import kagglehub
 
 # -------------------------------------------------------------------
-# Page config
-st.set_page_config(page_title="📊 Stock Market Dashboard", page_icon=":chart_with_upwards_trend:")
+# Page configuration
+st.set_page_config(
+    page_title="📊 Pro Stock Dashboard",
+    page_icon=":chart_with_upwards_trend:",
+    layout="wide"
+)
 
-st.title("📈 Stock Market Trends Dashboard")
-
-# 1. LAZY LOADING: Use a sidebar button to trigger the heavy work
-st.sidebar.header("Setup")
-load_button = st.sidebar.button("Download & Process Data")
-
-@st.cache_data(show_spinner="Downloading dataset (this may take a while)...")
+# -------------------------------------------------------------------
+# Load the pre-processed data
+@st.cache_data
 def load_data():
-    # Download once, cache the path
-    dataset_path = kagglehub.dataset_download("jacksoncrow/stock-market-dataset")
-    
-    # REDUCE DATA SIZE: Let's focus only on a specific folder (e.g., 'stocks') 
-    # and limit the number of files to prevent memory crashes.
-    csv_files = list(Path(dataset_path).rglob("stocks/*.csv"))[:50] # Limit to 50 stocks for speed
-    
-    all_data = []
-    for file in csv_files:
-        try:
-            # Optimize: only load the columns we actually need
-            df = pd.read_csv(file, usecols=["Date", "Close"])
-            df["Date"] = pd.to_datetime(df["Date"])
-            df["Ticker"] = file.stem
-            all_data.append(df)
-        except Exception:
-            continue
-    
-    if not all_data:
-        return pd.DataFrame()
-    return pd.concat(all_data, ignore_index=True)
+    # This reads the small, fast file you uploaded to GitHub
+    df = pd.read_parquet("processed_stocks.parquet")
+    # Ensure Date is datetime format
+    df["Date"] = pd.to_datetime(df["Date"])
+    return df
 
-# Main Logic
-if load_button:
-    df = load_data()
-    st.session_state['df'] = df
-    st.success("Data loaded successfully!")
+df = load_data()
 
-# Check if data exists in session state before proceeding
-if 'df' not in st.session_state:
-    st.info("👈 Click 'Download & Process Data' in the sidebar to begin.")
+# -------------------------------------------------------------------
+# Sidebar - Navigation & Filters
+st.sidebar.header("Dashboard Filters")
+
+# Ticker Selection
+tickers = sorted(df["Ticker"].unique())
+selected_ticker = st.sidebar.selectbox("Select Stock Ticker", tickers)
+
+# Date Range Selection
+min_date = df["Date"].min().to_pydatetime()
+max_date = df["Date"].max().to_pydatetime()
+
+date_range = st.sidebar.date_input(
+    "Select Date Range",
+    value=(min_date, max_date),
+    min_value=min_date,
+    max_value=max_date
+)
+
+# -------------------------------------------------------------------
+# Filter Logic
+# Handle the case where the user hasn't finished selecting a range
+if len(date_range) == 2:
+    start_date, end_date = date_range
+    mask = (
+        (df["Ticker"] == selected_ticker) & 
+        (df["Date"] >= pd.to_datetime(start_date)) & 
+        (df["Date"] <= pd.to_datetime(end_date))
+    )
+    filtered_df = df[mask].sort_values("Date")
+else:
+    st.info("Please select a start and end date.")
     st.stop()
 
-df = st.session_state['df']
-
 # -------------------------------------------------------------------
-# Sidebar filters (Same as your original code)
-st.sidebar.divider()
-st.sidebar.header("Filters")
+# Main UI
+st.title(f"📈 {selected_ticker} Performance Analysis")
 
-# ... rest of your filter and metric logic remains the same ...
+if not filtered_df.empty:
+    # Top Metrics Row
+    col1, col2, col3 = st.columns(3)
+    
+    current_price = filtered_df["Close"].iloc[-1]
+    open_price = filtered_df["Close"].iloc[0]
+    price_change = current_price - open_price
+    pct_change = (price_change / open_price) * 100
+
+    col1.metric("Current Price", f"${current_price:,.2f}")
+    col2.metric("Period Change", f"${price_change:,.2f}", f"{pct_change:.2f}%")
+    col3.metric("Data Points", len(filtered_df))
+
+    # Main Chart
+    st.subheader("Closing Price Trend")
+    st.line_chart(filtered_df.set_index("Date")["Close"])
+
+    # Data Table
+    with st.expander("View Raw Data"):
+        st.dataframe(filtered_df, use_container_width=True)
+else:
+    st.warning("No data found for the selected criteria.")
