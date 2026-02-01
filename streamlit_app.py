@@ -1,151 +1,123 @@
 import streamlit as st
 import pandas as pd
-import math
+import matplotlib.pyplot as plt
+import kagglehub
 from pathlib import Path
 
-# Set the title and favicon that appear in the Browser's tab bar.
+# -------------------------------------------------------------------
+# Page configuration
 st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
+    page_title="📈 Stock Market Dashboard",
+    page_icon=":chart_with_upwards_trend:"
 )
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
-
+# -------------------------------------------------------------------
+# Download dataset from Kaggle
 @st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+def download_dataset():
+    # Download the dataset
+    path = kagglehub.dataset_download("jacksoncrow/stock-market-dataset")
+    # Find CSV files inside
+    csv_files = list(Path(path).rglob("*.csv"))
+    if csv_files:
+        # Use first CSV for simplicity
+        return pd.read_csv(csv_files[0])
+    else:
+        st.error("No CSV files found in dataset")
+        return pd.DataFrame()
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
+# Load data
+df = download_dataset()
 
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
+# -------------------------------------------------------------------
+# Preprocess dataset
+if not df.empty:
+    # Ensure Date column is datetime
+    if "Date" in df.columns:
+        df["Date"] = pd.to_datetime(df["Date"])
+    else:
+        st.error("Dataset does not contain 'Date' column")
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
+    # Check for Ticker column, if not present add a dummy
+    if "Ticker" not in df.columns:
+        df["Ticker"] = "Stock"
 
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
+# -------------------------------------------------------------------
+# Sidebar filters
+st.sidebar.header("Filters")
+
+# Date range
+if not df.empty:
+    min_date = df["Date"].min()
+    max_date = df["Date"].max()
+    date_range = st.sidebar.date_input(
+        "Select date range",
+        value=[min_date, max_date]
     )
 
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
+# Ticker selection
+if "Ticker" in df.columns:
+    tickers = df["Ticker"].unique()
+    selected_tickers = st.sidebar.multiselect(
+        "Select stock tickers",
+        tickers,
+        default=[tickers[0]] if len(tickers) > 0 else []
+    )
+else:
+    selected_tickers = []
 
-    return gdp_df
+# -------------------------------------------------------------------
+# Filter data
+mask = (df["Date"] >= pd.to_datetime(date_range[0])) & (df["Date"] <= pd.to_datetime(date_range[1]))
+if selected_tickers:
+    mask &= df["Ticker"].isin(selected_tickers)
 
-gdp_df = get_gdp_data()
+filtered_df = df[mask]
 
-# -----------------------------------------------------------------------------
-# Draw the actual page
+# -------------------------------------------------------------------
+# Page title
+st.title("📊 Stock Market Price Trends")
 
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
+# Show filtered dataset
+st.write("### Filtered data", filtered_df.head())
 
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
+# -------------------------------------------------------------------
+# Closing price line chart
+st.write("### 📈 Closing Price Over Time")
+if "Close" in filtered_df.columns and not filtered_df.empty:
+    pivot_chart = filtered_df.pivot_table(index="Date", columns="Ticker", values="Close", aggfunc="mean")
+    st.line_chart(pivot_chart)
+else:
+    st.warning("No 'Close' column or empty data to plot")
 
-# Add some spacing
-''
-''
+# -------------------------------------------------------------------
+# Metrics: latest close and change
+st.write("### 📊 Latest Metrics")
+latest_date = filtered_df["Date"].max()
+latest_data = filtered_df[filtered_df["Date"] == latest_date]
 
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
-
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
-
-countries = gdp_df['Country Code'].unique()
-
-if not len(countries):
-    st.warning("Select at least one country")
-
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
-
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
-)
-
-''
-''
-
-
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
-
-st.header(f'GDP in {to_year}', divider='gray')
-
-''
-
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
+with st.container():
+    for ticker in selected_tickers or ["All Stocks"]:
+        if ticker != "All Stocks":
+            data_ticker = latest_data[latest_data["Ticker"] == ticker]
         else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
+            data_ticker = latest_data
 
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+        if not data_ticker.empty and "Close" in data_ticker.columns:
+            last_close = data_ticker["Close"].iloc[-1]
+            first_close = filtered_df[filtered_df["Date"] == pd.to_datetime(date_range[0])]
+            if ticker != "All Stocks":
+                first_close = first_close[first_close["Ticker"] == ticker]["Close"].iloc[0]
+            else:
+                first_close = first_close["Close"].iloc[0]
+            change = last_close - first_close
+            st.metric(
+                label=f"{ticker} Close Price",
+                value=f"${last_close:,.2f}",
+                delta=f"${change:,.2f}"
+            )
+        else:
+            st.write(f"No data for {ticker}")
+
+# -------------------------------------------------------------------
+# End of file
